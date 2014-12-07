@@ -11,7 +11,6 @@
 
 using namespace std;
 
-
 struct Knapsack // an instance of a knapsack problem
 {
 	const int capacity;			// weight limit W
@@ -28,7 +27,7 @@ struct Knapsack // an instance of a knapsack problem
 	vector<int> solve_fractional(void);	// first algorithm, returns optimal item weights x1, ..., xn. You may think you need to return floats, but integers are sufficient to solve the problem.  Can you see why? (Also floats are messy to handle.)
 	vector<int> solve_integral(void);	// second algorithm, returns optimal item quantities x1, ..., xn (each x is either 0 or 1)
 
-	int get_opt_fractional(void);		// these two functions can call the methods above, and return only the optimal total values
+	float get_opt_fractional(void);		// these two functions can call the methods above, and return only the optimal total values
 	int get_opt_integral(void);
 };
 
@@ -55,7 +54,7 @@ vector<int> Knapsack::solve_fractional()
 	{
 		j = table[i][0];											// j now points to the ith most valuable item per unit weight
 		result[j] = min(weights[j], capacity - knapsack_weight);	// add the most amount of unit i we can fit in our knapsack
-		knapsack_weight += result[i];								// now our knapsack becomes heavier
+		knapsack_weight += result[j];								// now our knapsack becomes heavier
 		i++;
 	}
 	return result;
@@ -64,37 +63,56 @@ vector<int> Knapsack::solve_fractional()
 vector<int> Knapsack::solve_integral()		// I will use a top-down approach, because I find it more elegant to program. You can also do bottom-up instead.
 {
 	vector<int> result(size, 0);			// change the ith 0 to 1 whenever you want to take item i
-	map<vector<int>, int> hash_table;	// for each pair (i, w), store the optimal solution for a knapsack of capacity w, using only the first i items
+	map<vector<int>, int> hash_table;		// for each pair (i, w), store the optimal solution for a knapsack of capacity w, using only the first i items
 
-	function<int(int, int)> m = [this, &m, &hash_table] (int i, int w) -> int // this lets you write a recursive lambda function. See http://stackoverflow.com/questions/2067988/recursive-lambda-functions-in-c0x
+
+	function<int(int, int)> m = [this, &m, &result, &hash_table] (int i, int w) -> int // this lets you write a recursive lambda function. See http://stackoverflow.com/questions/2067988/recursive-lambda-functions-in-c0x
 	{
-		vector<int> key(2, 0); // * it feels weird to use a vector for only two elements. Maybe I will look up how to use a pair or tuple structure.
+		vector<int> key(2, 0); // * it feels weird to use a vector for only two elements. Maybe one can use a pair or tuple structure.
 		key[0] = i;
 		key[1] = w;
 		if(hash_table.find(key) != hash_table.end())
 			return hash_table[key];	// if we already calculated this solution earlier, just pull it from the hash table
-		int answer;
+		int answer, pick_i, dont_pick_i;
 		if(i == 0)
 			answer = 0;
 		else
-			answer = (weights[i-1] > w) ? m(i-1, w) : max(m(i-1, w), m(i-1, w-weights[i-1]) + values[i-1]);	// this is the defining recursive formula
+		{
+			dont_pick_i = m(i-1, w);
+			answer = dont_pick_i;
+			if(weights[i-1] <= w) // this is the defining recursive formula
+			{
+				pick_i = m(i-1, w-weights[i-1]) + values[i-1];
+				if(pick_i > dont_pick_i)
+					answer = pick_i;
+			}
+		}
 		hash_table[key] = answer;	// now that we have found the answer, put it in our hash table so we needn't calculate it again next time
 		return answer;
 	};
 
-	m(size, capacity); // uses dynamic programming to fill the hash table. Now we need to backtrack to find the entire vector of choices
-
-	// * TO DO - implement backtracking
+	// backtracking to find vector
+	int i = size;
+	int w = capacity;
+	while(i > 0 && w > 0)
+	{
+		if(weights[i-1] <= w && m(i-1, w - weights[i-1]) + values[i-1] > m(i-1, w))
+		{
+			result[i-1] = 1;
+			w -= weights[i-1];
+		}
+		i--;
+	}
 
 	return result;
 }
 
-int Knapsack::get_opt_fractional()
+float Knapsack::get_opt_fractional()
 {
-	vector<int> opt_amounts = solve_fractional();
-	int result = 0;
+	vector<int> opt_amount = solve_fractional();
+	float result = 0.0f;
 	for(int i=0; i<size; i++)
-		result += opt_amounts[i] * values[i]; // add each items value multiplied by the number of units we take
+		result += (float) opt_amount[i] * (float) values[i] / (float) weights[i]; // add the appropriate proportion of value
 	return result;
 }
 
@@ -103,49 +121,44 @@ int Knapsack::get_opt_integral()
 	vector<int> opt_choices = solve_integral();
 	int result = 0;
 	for(int i=0; i<size; i++)
-		result += (opt_choices[i] ? values[i] : 0); // add items value if we choose to take it
+		result += (opt_choices[i] ? values[i] : 0); // add item's value if we choose to take it
 	return result;
 }
 
-bool simple_test() // a quick test to check your code compiles right
+void test(int capacity, vector<int> weights, vector<int> values) // quick test
 {
-	bool result = true;
-
-	// We have a knapsack of capacity 5, and only one item with weight 3 and value 2
-	int capacity = 5;
-	vector<int> weights(1, 3);
-	vector<int> values(1, 2);
-
-	vector<int> correct_fractional(1, 3);	// optimal fractional solution should just be {3}, indicating that 3 units of the first item are taken
-	vector<int> correct_integral(1, 1);		// optimal fractional solution should just be {1}, indicating that the first item is taken
-
 	Knapsack* K = new Knapsack(capacity, weights, values);
-	cout << "\nStarting simple test...\n\n";
+	cout << "\nStarting test...\n\n";
 
-	if(K->solve_fractional() == correct_fractional)
-		cout << "Fractional test PASSED\n";
-	else
-	{
-		cout << "Fractional test FAILED\n";
-		result = false;
-	}
-
-	if(K->solve_integral() == correct_integral)
-		cout << "Integral test PASSED\n";
-	else
-	{
-		cout << "Integral test FAILED\n";
-		result = false;
-	}
+	vector<int> frac = K->solve_fractional();
+	cout << "Fractional test\nOptimal value = " << K->get_opt_fractional() << "\n\n";
+	vector<int> integral = K->solve_integral();
+	cout << "Integral test\nOptimal value = " << K->get_opt_integral() << "\n\n";
 
 	delete K;
-	return result;
 }
 
 
 int main()
 {
-	simple_test();
+	// first test
+	int capacity = 5;
+	int myints1[] = {3, 4, 5, 1, 9};
+	vector<int> weights1(myints1, myints1 + sizeof(myints1) / sizeof(int) );
+	int myints2[] = {6, 8, 13, 3, 9};
+	vector<int> values1(myints2, myints2 + sizeof(myints2) / sizeof(int) );
+	test(capacity, weights1, values1);
+	// should return 13.4 and 13
+
+	// second test
+	capacity = 10;
+	int myints3[] = {5, 4, 6, 3};
+	vector<int> weights2(myints3, myints3 + sizeof(myints3) / sizeof(int) );
+	int myints4[] = {10, 40, 30, 50};
+	vector<int> values2(myints4, myints4 + sizeof(myints4) / sizeof(int) );
+	test(capacity, weights2, values2);
+	// should return 105 and 90
+
 
 	cout << "\nPress enter to exit...";
 	cin.get();
